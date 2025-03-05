@@ -44,16 +44,13 @@ def compare_file_lists(list1, list2):
     for path in common_paths:
         f1 = files1[path]
         f2 = files2[path]
-        # If file sizes differ, it is a modification.
         if f1['size'] != f2['size']:
             modified.append((f1, f2))
-        # If sizes are the same but mtime differs, then check MD5 if available.
         elif f1['mtime'] != f2['mtime']:
             if 'md5' in f1 and 'md5' in f2:
                 if f1['md5'] != f2['md5']:
                     modified.append((f1, f2))
-            # Without MD5, ignore mtime-only changes to reduce false positives.
-    # Detect renamed files by matching removed and added files.
+        # Without MD5, ignore mtime-only changes to reduce false positives.
     renamed = []
     remaining_added = []
     remaining_removed = removed.copy()
@@ -148,7 +145,7 @@ class SnapshotTool(QtWidgets.QMainWindow):
     def __init__(self):
         super(SnapshotTool, self).__init__()
         self.setWindowTitle("Professional Android Snapshot & Forensic Tool")
-        self.resize(1200, 800)
+        self.resize(1400, 900)
         
         self.db_name = "snapshots.db"
         self.init_db()
@@ -159,27 +156,38 @@ class SnapshotTool(QtWidgets.QMainWindow):
         self.previous_file_snapshot = None
         self.previous_package_snapshot = None
         
-        # Setup Tabs: Snapshots, Comparison, Persistence, Dynamic Analysis, Background Monitoring
+        # --------------------------
+        # Setup Main Tabs
+        # --------------------------
         self.tab_widget = QtWidgets.QTabWidget()
         self.snapshot_tab = QtWidgets.QWidget()
         self.compare_tab = QtWidgets.QWidget()
         self.persistence_tab = QtWidgets.QWidget()
         self.dynamic_tab = QtWidgets.QWidget()
         self.background_tab = QtWidgets.QWidget()
+        self.inspection_tab = QtWidgets.QWidget()
+        self.static_analysis_tab = QtWidgets.QWidget()
         
         self.tab_widget.addTab(self.snapshot_tab, "Snapshots")
         self.tab_widget.addTab(self.compare_tab, "Comparison")
-        self.tab_widget.addTab(self.persistence_tab, "Persistence Detection")
+        self.tab_widget.addTab(self.persistence_tab, "Persistence")
         self.tab_widget.addTab(self.dynamic_tab, "Dynamic Analysis")
         self.tab_widget.addTab(self.background_tab, "Background Monitoring")
+        self.tab_widget.addTab(self.inspection_tab, "Inspection")
+        self.tab_widget.addTab(self.static_analysis_tab, "Static Analysis")
         
         self.setCentralWidget(self.tab_widget)
         
+        # --------------------------
+        # Setup Each Tab
+        # --------------------------
         self.setup_snapshot_tab()
         self.setup_compare_tab()
         self.setup_persistence_tab()
         self.setup_dynamic_tab()
         self.setup_background_tab()
+        self.setup_inspection_tab()
+        self.setup_static_analysis_tab()
         
         self.load_snapshot_list()
         
@@ -280,7 +288,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
             snap_id, name, timestamp = snap
             display_text = f"{name} [{timestamp}]"
             self.snapshot_list.addItem(display_text)
-            # Use addItem with userData as the unique snapshot id.
             self.snapshot1_combo.addItem(display_text, snap_id)
             self.snapshot2_combo.addItem(display_text, snap_id)
 
@@ -355,7 +362,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
           - Scheduled Tasks (from dumpsys alarm, filtered for app-related entries)
           - Boot Scripts in /data/system/ and /data/local/init.d/ (if available)
         """
-        # Get startup apps using BOOT_COMPLETED intent
         startup_cmd = 'adb shell "cmd package query-intent-activities -a android.intent.action.BOOT_COMPLETED"'
         startup_output = self.run_adb_command(startup_cmd)
         startup_apps = []
@@ -365,22 +371,16 @@ class SnapshotTool(QtWidgets.QMainWindow):
                 pkg = match.group(1)
                 if not any(pkg.startswith(prefix) for prefix in ["android.", "com.android.", "com.google.android."]):
                     startup_apps.append(pkg)
-        
-        # Get scheduled tasks from dumpsys alarm and filter for lines containing probable package identifiers.
         scheduled_tasks_output = self.run_adb_command("adb shell dumpsys alarm")
         scheduled_tasks = []
         for line in scheduled_tasks_output.splitlines():
             if '.' in line:
                 scheduled_tasks.append(line.strip())
-        
-        # Get boot scripts in /data/system/
         boot_scripts_output = self.run_adb_command("adb shell ls -la /data/system/")
         boot_scripts = [line.strip() for line in boot_scripts_output.splitlines() if line.strip()]
-        # Additionally, check /data/local/init.d/ for user-installed init scripts
         initd_output = self.run_adb_command("adb shell ls -la /data/local/init.d")
         init_scripts = [line.strip() for line in initd_output.splitlines() if line.strip() and "No such file" not in line]
         boot_scripts.extend(init_scripts)
-        
         return {
             "startup_apps": startup_apps,
             "scheduled_tasks": scheduled_tasks,
@@ -442,7 +442,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
     def setup_dynamic_tab(self):
         layout = QtWidgets.QVBoxLayout()
         
-        # Running Processes Group
         proc_group = QtWidgets.QGroupBox("All Running Processes")
         proc_layout = QtWidgets.QVBoxLayout()
         self.process_viewer = QtWidgets.QTextEdit()
@@ -453,7 +452,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         proc_layout.addWidget(self.process_viewer)
         proc_group.setLayout(proc_layout)
         
-        # Installed App Processes Group
         app_proc_group = QtWidgets.QGroupBox("Installed App Processes")
         app_proc_layout = QtWidgets.QVBoxLayout()
         self.app_proc_viewer = QtWidgets.QTextEdit()
@@ -464,7 +462,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         app_proc_layout.addWidget(self.app_proc_viewer)
         app_proc_group.setLayout(app_proc_layout)
         
-        # App Network Connections Group
         net_group = QtWidgets.QGroupBox("App Network Connections")
         net_layout = QtWidgets.QVBoxLayout()
         self.net_viewer = QtWidgets.QTextEdit()
@@ -475,20 +472,19 @@ class SnapshotTool(QtWidgets.QMainWindow):
         net_layout.addWidget(self.net_viewer)
         net_group.setLayout(net_layout)
         
-        # Advanced Logcat Group with Filter
         log_group = QtWidgets.QGroupBox("Advanced Logcat")
         log_layout = QtWidgets.QVBoxLayout()
         hlayout_log = QtWidgets.QHBoxLayout()
-        self.log_filter_edit = QtWidgets.QLineEdit()
-        self.log_filter_edit.setPlaceholderText("Enter logcat filter (e.g., package name)")
-        self.refresh_log_btn = QtWidgets.QPushButton("Refresh Logcat")
-        self.refresh_log_btn.clicked.connect(self.refresh_filtered_logcat)
-        hlayout_log.addWidget(self.log_filter_edit)
-        hlayout_log.addWidget(self.refresh_log_btn)
-        self.log_viewer = QtWidgets.QTextEdit()
-        self.log_viewer.setReadOnly(True)
+        self.log_filter_edit_dyn = QtWidgets.QLineEdit()
+        self.log_filter_edit_dyn.setPlaceholderText("Enter logcat filter (e.g., package name)")
+        self.refresh_log_btn_dyn = QtWidgets.QPushButton("Refresh Logcat")
+        self.refresh_log_btn_dyn.clicked.connect(self.refresh_filtered_logcat_dyn)
+        hlayout_log.addWidget(self.log_filter_edit_dyn)
+        hlayout_log.addWidget(self.refresh_log_btn_dyn)
+        self.log_viewer_dyn = QtWidgets.QTextEdit()
+        self.log_viewer_dyn.setReadOnly(True)
         log_layout.addLayout(hlayout_log)
-        log_layout.addWidget(self.log_viewer)
+        log_layout.addWidget(self.log_viewer_dyn)
         log_group.setLayout(log_layout)
         
         layout.addWidget(proc_group)
@@ -538,15 +534,15 @@ class SnapshotTool(QtWidgets.QMainWindow):
         display_text = "\n".join(filtered_lines) if filtered_lines else "No network connections found for installed apps."
         self.net_viewer.setPlainText(display_text)
 
-    def refresh_filtered_logcat(self):
-        filter_str = self.log_filter_edit.text().strip()
+    def refresh_filtered_logcat_dyn(self):
+        filter_str = self.log_filter_edit_dyn.text().strip()
         log_output = self.run_adb_command("adb shell logcat -d -t 200")
         if filter_str:
             filtered = [line for line in log_output.splitlines() if filter_str in line]
             display_text = "\n".join(filtered)
         else:
             display_text = log_output
-        self.log_viewer.setPlainText(display_text)
+        self.log_viewer_dyn.setPlainText(display_text)
 
     # --------------------------
     # Background Monitoring Functions
@@ -563,7 +559,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         control_layout.addWidget(self.stop_bg_btn)
         layout.addLayout(control_layout)
         
-        # File Monitoring Group
         file_group = QtWidgets.QGroupBox("Real-time File Monitoring")
         file_layout = QtWidgets.QVBoxLayout()
         self.file_monitor_viewer = QtWidgets.QTextEdit()
@@ -571,7 +566,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         file_layout.addWidget(self.file_monitor_viewer)
         file_group.setLayout(file_layout)
         
-        # Package Monitoring Group
         pkg_group = QtWidgets.QGroupBox("Installed Package Monitoring")
         pkg_layout = QtWidgets.QVBoxLayout()
         self.pkg_monitor_viewer = QtWidgets.QTextEdit()
@@ -579,7 +573,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         pkg_layout.addWidget(self.pkg_monitor_viewer)
         pkg_group.setLayout(pkg_layout)
         
-        # API / Logcat Monitoring Group
         api_group = QtWidgets.QGroupBox("API / Logcat Monitoring")
         api_layout = QtWidgets.QVBoxLayout()
         self.api_monitor_viewer = QtWidgets.QTextEdit()
@@ -587,7 +580,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         api_layout.addWidget(self.api_monitor_viewer)
         api_group.setLayout(api_layout)
         
-        # System Status Monitoring Group (New)
         sys_group = QtWidgets.QGroupBox("System Status Monitoring")
         sys_layout = QtWidgets.QVBoxLayout()
         self.battery_viewer = QtWidgets.QTextEdit()
@@ -612,7 +604,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         self.background_tab.setLayout(layout)
 
     def run_background_monitoring(self):
-        """Periodically check file system changes, package changes, API/log events, and system status."""
         if not self.is_device_connected():
             self.file_monitor_viewer.setPlainText("No device connected.")
             self.pkg_monitor_viewer.setPlainText("No device connected.")
@@ -622,7 +613,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
             self.top_viewer.setPlainText("No device connected.")
             return
 
-        # FILE MONITORING
         current_files = self.get_file_list()
         if self.previous_file_snapshot is not None:
             diff = compare_file_lists(self.previous_file_snapshot, current_files)
@@ -632,7 +622,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         self.file_monitor_viewer.setPlainText(file_diff_text)
         self.previous_file_snapshot = current_files
 
-        # PACKAGE MONITORING
         current_pkgs = self.get_installed_packages()
         if self.previous_package_snapshot is not None:
             added = set(current_pkgs) - set(self.previous_package_snapshot)
@@ -649,13 +638,11 @@ class SnapshotTool(QtWidgets.QMainWindow):
         self.pkg_monitor_viewer.setPlainText(pkg_diff_text)
         self.previous_package_snapshot = current_pkgs
 
-        # API / LOGCAT MONITORING
         api_log = self.get_api_log()
         if not api_log:
             api_log = "No API-related log events detected."
         self.api_monitor_viewer.setPlainText(api_log)
 
-        # SYSTEM STATUS MONITORING
         battery_status = self.run_adb_command("adb shell dumpsys battery")
         self.battery_viewer.setPlainText(battery_status if battery_status else "No battery data.")
         
@@ -666,9 +653,7 @@ class SnapshotTool(QtWidgets.QMainWindow):
         self.top_viewer.setPlainText(top_output if top_output else "No CPU usage data.")
 
     def start_background_monitoring(self):
-        # Run monitoring immediately to show initial output
         self.run_background_monitoring()
-        # Start timer: run every 60 seconds (adjust interval as needed)
         self.background_timer.start(60000)
         QtWidgets.QMessageBox.information(self, "Background Monitoring", "Background monitoring started.")
 
@@ -677,10 +662,181 @@ class SnapshotTool(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.information(self, "Background Monitoring", "Background monitoring stopped.")
 
     # --------------------------
+    # Inspection Tab
+    # --------------------------
+    def setup_inspection_tab(self):
+        layout = QtWidgets.QVBoxLayout()
+        
+        net_group = QtWidgets.QGroupBox("Network Inspection")
+        net_layout = QtWidgets.QVBoxLayout()
+        self.net_inspect_viewer = QtWidgets.QTextEdit()
+        self.net_inspect_viewer.setReadOnly(True)
+        net_refresh_btn = QtWidgets.QPushButton("Refresh Network Inspection")
+        net_refresh_btn.clicked.connect(self.refresh_inspection_network)
+        net_layout.addWidget(net_refresh_btn)
+        net_layout.addWidget(self.net_inspect_viewer)
+        net_group.setLayout(net_layout)
+        
+        file_group = QtWidgets.QGroupBox("File Inspection (Created, Deleted, Renamed, Tampered)")
+        file_layout = QtWidgets.QVBoxLayout()
+        self.file_inspect_viewer = QtWidgets.QTextEdit()
+        self.file_inspect_viewer.setReadOnly(True)
+        file_refresh_btn = QtWidgets.QPushButton("Refresh File Inspection")
+        file_refresh_btn.clicked.connect(self.refresh_inspection_file)
+        file_layout.addWidget(file_refresh_btn)
+        file_layout.addWidget(self.file_inspect_viewer)
+        file_group.setLayout(file_layout)
+        
+        pkg_group = QtWidgets.QGroupBox("Package Inspection (Installed/Removed/Renamed/Tampered)")
+        pkg_layout = QtWidgets.QVBoxLayout()
+        self.pkg_inspect_viewer = QtWidgets.QTextEdit()
+        self.pkg_inspect_viewer.setReadOnly(True)
+        pkg_refresh_btn = QtWidgets.QPushButton("Refresh Package Inspection")
+        pkg_refresh_btn.clicked.connect(self.refresh_inspection_package)
+        pkg_layout.addWidget(pkg_refresh_btn)
+        pkg_layout.addWidget(self.pkg_inspect_viewer)
+        pkg_group.setLayout(pkg_layout)
+        
+        api_group = QtWidgets.QGroupBox("API Inspection (Logcat Filtering)")
+        api_layout = QtWidgets.QVBoxLayout()
+        hlayout_api = QtWidgets.QHBoxLayout()
+        self.api_filter_edit = QtWidgets.QLineEdit()
+        self.api_filter_edit.setPlaceholderText("Enter API filter (e.g., method name)")
+        api_refresh_btn = QtWidgets.QPushButton("Refresh API Inspection")
+        api_refresh_btn.clicked.connect(self.refresh_inspection_api)
+        hlayout_api.addWidget(self.api_filter_edit)
+        hlayout_api.addWidget(api_refresh_btn)
+        self.api_inspect_viewer = QtWidgets.QTextEdit()
+        self.api_inspect_viewer.setReadOnly(True)
+        api_layout.addLayout(hlayout_api)
+        api_layout.addWidget(self.api_inspect_viewer)
+        api_group.setLayout(api_layout)
+        
+        layout.addWidget(net_group)
+        layout.addWidget(file_group)
+        layout.addWidget(pkg_group)
+        layout.addWidget(api_group)
+        self.inspection_tab.setLayout(layout)
+    
+    def refresh_inspection_network(self):
+        output = self.run_adb_command("adb shell netstat -p")
+        self.net_inspect_viewer.setPlainText(output if output else "No network data.")
+    
+    def refresh_inspection_file(self):
+        current_files = self.get_file_list()
+        if self.previous_file_snapshot is not None:
+            diff = compare_file_lists(self.previous_file_snapshot, current_files)
+            text = format_diff_results(diff)
+        else:
+            text = "No previous file snapshot available for comparison."
+        self.file_inspect_viewer.setPlainText(text)
+    
+    def refresh_inspection_package(self):
+        current_pkgs = self.get_installed_packages()
+        if self.previous_package_snapshot is not None:
+            diff = compare_package_lists(self.previous_package_snapshot, current_pkgs)
+            text = ""
+            if diff["added"]:
+                text += "=== Packages Added ===\n" + "\n".join(diff["added"]) + "\n\n"
+            if diff["removed"]:
+                text += "=== Packages Removed ===\n" + "\n".join(diff["removed"]) + "\n\n"
+            if text == "":
+                text = "No package changes detected."
+        else:
+            text = "No previous package snapshot available for comparison."
+        self.pkg_inspect_viewer.setPlainText(text)
+    
+    def refresh_inspection_api(self):
+        filter_str = self.api_filter_edit.text().strip()
+        log_output = self.run_adb_command("adb shell logcat -d -t 200")
+        if filter_str:
+            filtered = [line for line in log_output.splitlines() if filter_str in line]
+            display_text = "\n".join(filtered)
+        else:
+            display_text = log_output
+        self.api_inspect_viewer.setPlainText(display_text)
+
+    # --------------------------
+    # Static Analysis Tab
+    # --------------------------
+    def setup_static_analysis_tab(self):
+        layout = QtWidgets.QVBoxLayout()
+        self.static_tab_widget = QtWidgets.QTabWidget()
+        
+        self.services_tab = self.create_static_subtab("Services", self.refresh_services_static)
+        self.activities_tab = self.create_static_subtab("Activities", self.refresh_activities_static)
+        self.permissions_tab = self.create_static_subtab("Abused Permissions", self.refresh_permissions_static)
+        self.providers_tab = self.create_static_subtab("Providers", self.refresh_providers_static)
+        self.libraries_tab = self.create_static_subtab("Libraries", self.refresh_libraries_static)
+        self.components_tab = self.create_static_subtab("Components", self.refresh_components_static)
+        self.sbom_tab = self.create_static_subtab("SBOM", self.refresh_sbom_static)
+        self.static_files_tab = self.create_static_subtab("Files", self.refresh_static_files)
+        
+        self.static_tab_widget.addTab(self.services_tab, "Services")
+        self.static_tab_widget.addTab(self.activities_tab, "Activities")
+        self.static_tab_widget.addTab(self.permissions_tab, "Abused Permissions")
+        self.static_tab_widget.addTab(self.providers_tab, "Providers")
+        self.static_tab_widget.addTab(self.libraries_tab, "Libraries")
+        self.static_tab_widget.addTab(self.components_tab, "Components")
+        self.static_tab_widget.addTab(self.sbom_tab, "SBOM")
+        self.static_tab_widget.addTab(self.static_files_tab, "Files")
+        
+        layout.addWidget(self.static_tab_widget)
+        self.static_analysis_tab.setLayout(layout)
+    
+    def create_static_subtab(self, title, refresh_callback):
+        tab = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout()
+        refresh_btn = QtWidgets.QPushButton(f"Refresh {title}")
+        refresh_btn.clicked.connect(refresh_callback)
+        text_viewer = QtWidgets.QTextEdit()
+        text_viewer.setReadOnly(True)
+        layout.addWidget(refresh_btn)
+        layout.addWidget(text_viewer)
+        tab.setLayout(layout)
+        setattr(self, f"{title.lower().replace(' ', '_')}_viewer", text_viewer)
+        return tab
+    
+    def refresh_services_static(self):
+        output = self.run_adb_command("adb shell dumpsys activity services")
+        self.services_viewer.setPlainText(output if output else "No services data.")
+    
+    def refresh_activities_static(self):
+        output = self.run_adb_command("adb shell dumpsys activity activities")
+        self.activities_viewer.setPlainText(output if output else "No activities data.")
+    
+    def refresh_permissions_static(self):
+        output = self.run_adb_command("adb shell dumpsys package")
+        filtered = "\n".join([line for line in output.splitlines() if "permission" in line.lower()])
+        self.abused_permissions_viewer.setPlainText(filtered if filtered else "No abused permissions detected.")
+    
+    def refresh_providers_static(self):
+        output = self.run_adb_command("adb shell dumpsys package providers")
+        self.providers_viewer.setPlainText(output if output else "No providers data.")
+    
+    def refresh_libraries_static(self):
+        output = self.run_adb_command("adb shell pm list libraries")
+        self.libraries_viewer.setPlainText(output if output else "No libraries data.")
+    
+    def refresh_components_static(self):
+        output = self.run_adb_command("adb shell dumpsys package")
+        self.components_viewer.setPlainText(output if output else "No components data.")
+    
+    def refresh_sbom_static(self):
+        data_app = self.run_adb_command("adb shell ls /data/app")
+        system_app = self.run_adb_command("adb shell ls /system/app")
+        text = "Data Apps:\n" + data_app + "\n\nSystem Apps:\n" + system_app
+        self.sbom_viewer.setPlainText(text if text else "No SBOM data.")
+    
+    def refresh_static_files(self):
+        files = self.get_file_list()
+        text = "\n".join([f"Path: {f['path']} | Size: {f['size']} | MTime: {f['mtime']}" for f in files])
+        self.files_viewer.setPlainText(text if text else "No files found.")
+    
+    # --------------------------
     # ADB Utility Functions
     # --------------------------
     def run_adb_command(self, command):
-        """Run an ADB command and return its output."""
         try:
             result = subprocess.run(command, shell=True, capture_output=True, text=True)
             return result.stdout.strip()
@@ -695,11 +851,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
     # File & Snapshot Functions
     # --------------------------
     def get_file_list(self):
-        """
-        Retrieve a structured file list from /sdcard/ using find and stat.
-        Each file entry is a dict with keys: path, size, mtime.
-        Optionally compute the MD5 if deep_scan_enabled.
-        """
         cmd = 'adb shell "find /sdcard/ -type f -exec stat -c \'%n|%s|%Y\' {} \\;"'
         output = self.run_adb_command(cmd)
         files = []
@@ -718,11 +869,9 @@ class SnapshotTool(QtWidgets.QMainWindow):
                     files.append(entry)
             except Exception:
                 continue
-        # Apply file filtering to reduce noise.
         return filter_file_list(files)
 
     def compute_md5(self, file_path):
-        """Compute MD5 for a file on the device using 'adb shell md5sum'."""
         cmd = f'adb shell "md5sum \'{file_path}\'"'
         output = self.run_adb_command(cmd)
         parts = output.split()
@@ -731,10 +880,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         return None
 
     def get_installed_packages(self):
-        """
-        Retrieve installed packages using adb shell.
-        Returns a list of package strings after filtering common system packages.
-        """
         pkg_output = self.run_adb_command("adb shell pm list packages -f")
         packages = []
         for line in pkg_output.splitlines():
@@ -747,9 +892,6 @@ class SnapshotTool(QtWidgets.QMainWindow):
         return filter_package_list(packages)
 
     def get_api_log(self):
-        """
-        Retrieve the last 100 logcat lines and filter those that mention "API".
-        """
         log_output = self.run_adb_command("adb shell logcat -d -t 100")
         filtered = [line for line in log_output.splitlines() if "API" in line]
         return "\n".join(filtered)
