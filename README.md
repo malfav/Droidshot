@@ -1,4 +1,6 @@
-![Droidshot]([https://github.com/malfav/Droidshot/blob/5d74f9dcdd152034123f1b030e108a264a77f62f/scr.png](https://github.com/malfav/Droidshot/blob/79e2d0a92a4ab09c23bade2ea1ee2ca0f94016cb/scr.png))Welcome to the Droidshot wiki!
+Welcome to the Droidshot wiki!
+
+![Droidshot](https://github.com/malfav/Droidshot/blob/4e0ab932f2b23f999e19e0b4989104566167a03d/scr.png)
 
 # Features & Capabilities 
 
